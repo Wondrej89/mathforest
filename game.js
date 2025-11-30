@@ -422,43 +422,32 @@
   }
 
   function drawHUD() {
-    const padding = tileSize * 0.3;
-    const hudY = worldTop + padding;
+  const padding = tileSize * 0.3;
 
-    ctx.font = `${Math.floor(tileSize * 0.6)}px system-ui`;
-    ctx.textBaseline = "top";
+  ctx.font = `${Math.floor(tileSize * 0.6)}px system-ui`;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
 
-    // levý text: název levelu
-    const leftText = `Level ${currentLevel.id}: ${currentLevel.name}`;
-    ctx.textAlign = "left";
-    ctx.fillStyle = COLORS.hudShadow;
-    ctx.fillText(leftText, worldLeft + padding + 2, hudY + 2);
-    ctx.fillStyle = COLORS.hudText;
-    ctx.fillText(leftText, worldLeft + padding, hudY);
+  // levý text: název levelu
+  ctx.fillStyle = COLORS.hudShadow;
+  ctx.fillText(`Level ${currentLevel.id}: ${currentLevel.name}`, worldLeft + padding + 2, worldTop + padding + 2);
+  ctx.fillStyle = COLORS.hudText;
+  ctx.fillText(`Level ${currentLevel.id}: ${currentLevel.name}`, worldLeft + padding, worldTop + padding);
 
-    // pravý text: počet příkladů
-    const rightText = `Příklady: ${solvedQuestions} / ${totalQuestions}`;
-    ctx.textAlign = "right";
-    const rightX = worldLeft + worldWidthPx - padding;
-    ctx.fillStyle = COLORS.hudShadow;
-    ctx.fillText(rightText, rightX + 2, hudY + 2);
-    ctx.fillStyle = COLORS.hudText;
-    ctx.fillText(rightText, rightX, hudY);
+  // pravý text: příklady
+  ctx.textAlign = "right";
+  ctx.fillStyle = COLORS.hudShadow;
+  ctx.fillText(`Příklady: ${solvedQuestions} / ${totalQuestions}`,
+    worldLeft + worldWidthPx - padding + 2,
+    worldTop + padding + 2
+  );
+  ctx.fillStyle = COLORS.hudText;
+  ctx.fillText(`Příklady: ${solvedQuestions} / ${totalQuestions}`,
+    worldLeft + worldWidthPx - padding,
+    worldTop + padding
+  );
+}
 
-    // zpráva dole
-    if (lastMessageTimer > 0 && lastMessage) {
-      const msgY = worldTop + worldHeightPx - padding - tileSize * 0.8;
-      ctx.textAlign = "center";
-      ctx.fillStyle = COLORS.hudShadow;
-      ctx.fillText(
-        lastMessage,
-        worldLeft + worldWidthPx / 2 + 2,
-        msgY + 2
-      );
-      ctx.fillStyle = lastMessageColor;
-      ctx.fillText(lastMessage, worldLeft + worldWidthPx / 2, msgY);
-    }
-  }
 
   function drawQuizOverlay() {
     const q = currentQuiz;
@@ -468,8 +457,8 @@
     ctx.fillRect(worldLeft, worldTop, worldWidthPx, worldHeightPx);
 
     // panel
-    const panelW = worldWidthPx * 0.9;
-    const panelH = tileSize * 7;
+    const panelW = Math.min(worldWidthPx * 0.85, tileSize * 12);
+    const panelH = tileSize * 8;
     const panelX = worldLeft + (worldWidthPx - panelW) / 2;
     const panelY = worldTop + (worldHeightPx - panelH) / 2;
 
@@ -553,10 +542,8 @@
     const tokensTop = equationY + slotSize + tileSize * 1.4;
     const btnSize = tileSize * 1.4;
     const btnMargin = tileSize * 0.3;
-    const tokensPerRow = Math.max(
-      1,
-      Math.floor((panelW - tileSize * 1.5) / (btnSize + btnMargin))
-    );
+    const tokensPerRow = Math.max(3, Math.floor(panelW / (btnSize * 1.4)));
+
 
     q.tokenButtons = [];
     ctx.font = `${Math.floor(tileSize * 0.7)}px system-ui`;
