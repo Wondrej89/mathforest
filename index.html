@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Lesní počítání</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-root">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- HUD nahoře -->
+    <div id="hud">
+      <div id="hud-level">Level 1</div>
+      <div id="hud-progress">Příklady: 0 / 10</div>
+    </div>
+
+    <!-- Overlay na příklady / dialogy -->
+    <div id="overlay" class="hidden">
+      <div id="overlay-box">
+        <div id="overlay-question">3 + 4 = ?</div>
+        <input id="overlay-answer" type="number" inputmode="numeric" autocomplete="off">
+        <div id="overlay-buttons">
+          <button id="overlay-confirm">Potvrdit</button>
+          <button id="overlay-cancel">Zavřít</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobilní ovládání -->
+    <div id="touch-controls">
+      <div class="row">
+        <button class="btn-dir" data-dir="up">▲</button>
+      </div>
+      <div class="row">
+        <button class="btn-dir" data-dir="left">◀</button>
+        <button class="btn-dir" data-dir="down">▼</button>
+        <button class="btn-dir" data-dir="right">▶</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
