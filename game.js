@@ -1,448 +1,458 @@
-// game.js – dej do stejné složky jako index.html
+// game.js
 
-(() => {
-  // ---------- Konfigurace levelů ----------
+// -------------------------
+// Konfigurace levelů
+// -------------------------
 
-  /** Typy dlaždic:
-   *  G = tráva (průchozí)
-   *  P = cesta (průchozí)
-   *  D = okraj/hlína (neprůchozí)
-   *  B = keř/překážka (neprůchozí)
-   *  Q = dlaždice s úlohou (průchozí, spustí příklad)
-   */
+// Značky v mapě:
+// G = tráva (volný průchod)
+// P = cesta (volný průchod)
+// W = zeď / bariéra (nelze projít)
+// S = start hráče
+// Q = políčko s příkladem
+// F = cílové políčko (konec levelu)
 
-  const LEVELS = [
-    {
-      id: "level1",
-      name: "Lesní stezka",
-      width: 8,
-      height: 16,
-      playerStart: { x: 3, y: 15 }, // sloupec, řádek (0-based)
-      map: [
-        "DDGGQGDD",
-        "DDGGPGDD",
-        "DDGBPGDD",
-        "DDGGPGDD",
-        "DDGGPGDD",
-        "DDGGQGDD",
-        "DDGGPGDD",
-        "DDGBPGDD",
-        "DDGGPGDD",
-        "DDGGQGDD",
-        "DDGGPGDD",
-        "DDGGPGDD",
-        "DDGGQGDD",
-        "DDGGPGDD",
-        "DDGGPGDD",
-        "DDGGPGDD"
-      ]
-    }
-  ];
+const LEVELS = [
+  {
+    id: "level1",
+    name: "Lesní stezka",
+    cols: 7,
+    rows: 26,
+    solvedNeeded: 5,
+    layout: [
+      "WWWWWWW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WGGPGGW",
+      "WWWWWWW"
+    ],
+    // souřadnice příkladů (řádek, sloupec) – podle indexu v poli questions
+    questionsPositions: [
+      { row: 2, col: 3 },
+      { row: 6, col: 3 },
+      { row: 10, col: 3 },
+      { row: 14, col: 3 },
+      { row: 18, col: 3 }
+    ],
+    questions: [
+      { text: "2 + 3 = ?", answer: 5 },
+      { text: "9 - 4 = ?", answer: 5 },
+      { text: "3 + 6 = ?", answer: 9 },
+      { text: "8 - 5 = ?", answer: 3 },
+      { text: "4 + 5 = ?", answer: 9 }
+    ],
+    start: { row: 20, col: 3 },
+    finish: { row: 1, col: 3 } // nahoře
+  }
+];
 
-  // ---------- DOM prvky ----------
+// -------------------------
+// Stav hry
+// -------------------------
 
-  const canvas = document.getElementById("game-canvas");
-  const ctx = canvas.getContext("2d");
+let currentLevelIndex = 0;
+let player = { row: 0, col: 0 };
+let solvedCount = 0;
+let answeredQuestions = new Set();
 
-  const hudLevel = document.getElementById("hud-level");
-  const hudProgress = document.getElementById("hud-progress");
+let gameRoot;
+let gridEl;
+let hudLevelEl;
+let hudTasksEl;
 
-  const overlay = document.getElementById("question-overlay");
-  const questionTextEl = document.getElementById("question-text");
-  const answerInputEl = document.getElementById("answer-input");
-  const answerSubmitBtn = document.getElementById("answer-submit");
-  const answerCancelBtn = document.getElementById("answer-cancel");
-  const questionFeedbackEl = document.getElementById("question-feedback");
+// Ukládání checkpointů (jen do localStorage – jednoduché)
+const SAVE_KEY = "math-forest-save";
 
-  // ---------- Stav hry ----------
-
-  let currentLevelIndex = 0;
-  let currentLevel = null;
-
-  let tileSize = 32; // dopočítá se podle okna
-  let cols = 0;
-  let rows = 0;
-
-  const player = {
-    x: 0,
-    y: 0
+function saveProgress() {
+  const data = {
+    levelIndex: currentLevelIndex,
+    solvedCount,
+    answeredQuestions: Array.from(answeredQuestions)
   };
+  localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+}
 
-  let solvedQuestions = 0;
-  let totalQuestions = 0;
-  let solvedQuestionTiles = new Set(); // "x,y"
+function loadProgress() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (typeof data.levelIndex === "number") {
+      currentLevelIndex = Math.min(
+        Math.max(data.levelIndex, 0),
+        LEVELS.length - 1
+      );
+    }
+    solvedCount = data.solvedCount || 0;
+    answeredQuestions = new Set(data.answeredQuestions || []);
+  } catch {
+    // když se save rozbije, ignoruj
+  }
+}
 
-  let awaitingAnswer = false;
-  let currentCorrectAnswer = null;
+// -------------------------
+// Inicializace DOM
+// -------------------------
 
-  // ---------- Pomocné funkce ----------
+function createBaseLayout() {
+  gameRoot = document.getElementById("game-root");
+  gameRoot.innerHTML = "";
 
-  function loadLevel(index) {
-    currentLevelIndex = index;
-    currentLevel = LEVELS[index];
-    cols = currentLevel.width;
-    rows = currentLevel.height;
+  const wrapper = document.createElement("div");
+  wrapper.className = "game-wrapper";
 
-    // výchozí pozice hráče
-    player.x = currentLevel.playerStart.x;
-    player.y = currentLevel.playerStart.y;
+  // HUD (fixně nahoře)
+  const hud = document.createElement("div");
+  hud.className = "game-hud";
 
-    // spočítat počet úloh v levelu
-    solvedQuestions = 0;
-    solvedQuestionTiles = new Set();
-    totalQuestions = 0;
+  hudLevelEl = document.createElement("div");
+  hudLevelEl.className = "hud-level";
 
-    for (let y = 0; y < rows; y++) {
-      const row = currentLevel.map[y];
-      for (let x = 0; x < cols; x++) {
-        if (row[x] === "Q") totalQuestions++;
+  hudTasksEl = document.createElement("div");
+  hudTasksEl.className = "hud-tasks";
+
+  hud.appendChild(hudLevelEl);
+  hud.appendChild(hudTasksEl);
+
+  // Mřížka
+  gridEl = document.createElement("div");
+  gridEl.id = "game-grid";
+  gridEl.className = "game-grid";
+
+  wrapper.appendChild(hud);
+  wrapper.appendChild(gridEl);
+
+  gameRoot.appendChild(wrapper);
+}
+
+// -------------------------
+// Vykreslení levelu
+// -------------------------
+
+function buildGrid(level) {
+  gridEl.innerHTML = "";
+  gridEl.style.setProperty("--cols", level.cols);
+
+  const tiles = [];
+
+  for (let r = 0; r < level.rows; r++) {
+    tiles[r] = [];
+    const rowStr = level.layout[r] || "";
+
+    for (let c = 0; c < level.cols; c++) {
+      const ch = rowStr[c] || "G";
+
+      const tile = document.createElement("div");
+      tile.classList.add("tile");
+
+      switch (ch) {
+        case "W":
+          tile.dataset.type = "wall";
+          tile.classList.add("tile-wall");
+          break;
+        case "P":
+          tile.dataset.type = "path";
+          tile.classList.add("tile-path");
+          break;
+        case "S":
+          tile.dataset.type = "start";
+          tile.classList.add("tile-path");
+          break;
+        case "F":
+          tile.dataset.type = "finish";
+          tile.classList.add("tile-path");
+          break;
+        default:
+          tile.dataset.type = "ground";
+          tile.classList.add("tile-ground");
       }
-    }
 
-    updateHud();
-    resizeCanvas();
-    render(); // první vykreslení
-  }
+      tile.dataset.row = r;
+      tile.dataset.col = c;
 
-  function updateHud() {
-    if (hudLevel) {
-      hudLevel.textContent = `Level ${currentLevelIndex + 1}: ${
-        currentLevel.name
-      }`;
-    }
-    if (hudProgress) {
-      hudProgress.textContent = `Příklady: ${solvedQuestions} / ${totalQuestions}`;
+      tiles[r][c] = tile;
+      gridEl.appendChild(tile);
     }
   }
 
-  function resizeCanvas() {
-    const root = document.getElementById("game-root");
-    const availableWidth = root ? root.clientWidth : window.innerWidth;
-    const availableHeight = root ? root.clientHeight : window.innerHeight;
+  // označ otázkové dlaždice
+  level.questionsPositions.forEach((pos, index) => {
+    const t = tiles[pos.row][pos.col];
+    if (!t) return;
+    t.dataset.type = "question";
+    t.dataset.qindex = index.toString();
+    t.classList.remove("tile-ground", "tile-path");
+    t.classList.add("tile-question");
+  });
 
-    // chceme spíš vyšší mapu (portrait), takže omezíme velikost podle šířky i výšky
-    tileSize = Math.floor(
-      Math.min(availableWidth / cols, availableHeight / rows)
+  // označ cílové políčko
+  const finishTile = tiles[level.finish.row][level.finish.col];
+  if (finishTile) {
+    finishTile.dataset.type = "finish";
+    finishTile.classList.add("tile-finish");
+  }
+
+  return tiles;
+}
+
+// -------------------------
+// Herní logika
+// -------------------------
+
+let tiles = [];
+
+function startLevel(index) {
+  const level = LEVELS[index];
+
+  hudLevelEl.textContent = `Level ${index + 1}: ${level.name}`;
+  updateTasksHud(level);
+
+  tiles = buildGrid(level);
+
+  // nastavení hráče na start
+  player.row = level.start.row;
+  player.col = level.start.col;
+  answeredQuestions = new Set(); // při novém levelu
+  solvedCount = 0;
+
+  updateTasksHud(level);
+  renderPlayer();
+  scrollToPlayer(true);
+  saveProgress();
+}
+
+function updateTasksHud(level) {
+  hudTasksEl.textContent = `Příklady: ${solvedCount} / ${level.solvedNeeded}`;
+}
+
+function renderPlayer() {
+  // nejdřív odstraň hráče z předchozí pozice
+  document
+    .querySelectorAll(".tile-player")
+    .forEach((el) => el.classList.remove("tile-player"));
+
+  const tile = tiles[player.row]?.[player.col];
+  if (tile) {
+    tile.classList.add("tile-player");
+  }
+}
+
+function tileType(row, col) {
+  const t = tiles[row]?.[col];
+  if (!t) return "wall";
+  return t.dataset.type || "ground";
+}
+
+function handleMove(dx, dy) {
+  const level = LEVELS[currentLevelIndex];
+
+  const targetRow = player.row + dy;
+  const targetCol = player.col + dx;
+
+  // mimo mapu?
+  if (
+    targetRow < 0 ||
+    targetRow >= level.rows ||
+    targetCol < 0 ||
+    targetCol >= level.cols
+  ) {
+    return;
+  }
+
+  const type = tileType(targetRow, targetCol);
+  if (type === "wall") {
+    return; // nelze projít
+  }
+
+  player.row = targetRow;
+  player.col = targetCol;
+
+  renderPlayer();
+  scrollToPlayer(false);
+
+  if (type === "question") {
+    handleQuestion(level, targetRow, targetCol);
+  } else if (type === "finish") {
+    handleFinishLevel(level);
+  }
+
+  saveProgress();
+}
+
+function handleQuestion(level, row, col) {
+  const tile = tiles[row][col];
+  const qIndexStr = tile.dataset.qindex;
+  if (qIndexStr == null) return;
+
+  const qIndex = parseInt(qIndexStr, 10);
+  const qKey = `${currentLevelIndex}:${qIndex}`;
+
+  if (answeredQuestions.has(qKey)) {
+    return; // už vyřešeno
+  }
+
+  const q = level.questions[qIndex];
+  if (!q) return;
+
+  const answerStr = window.prompt(q.text);
+  if (answerStr == null) {
+    return;
+  }
+
+  const answerNum = Number(answerStr.replace(",", "."));
+
+  if (Number.isNaN(answerNum)) {
+    alert("Tohle není číslo, zkus to znovu 🙂");
+    return;
+  }
+
+  if (answerNum === q.answer) {
+    answeredQuestions.add(qKey);
+    solvedCount++;
+    tile.classList.add("tile-question-solved");
+    updateTasksHud(level);
+
+    if (solvedCount >= level.solvedNeeded) {
+      // otevři cestu k cíli – tady jen informačně
+      alert("Skvěle! Máš splněné všechny příklady, dojdi k cíli.");
+    }
+  } else {
+    alert("Ještě to není ono, zkus jinou odpověď.");
+  }
+}
+
+function handleFinishLevel(level) {
+  if (solvedCount < level.solvedNeeded) {
+    alert(
+      `Nejprve spočítej všechny příklady (${solvedCount}/${level.solvedNeeded}).`
     );
-
-    const width = tileSize * cols;
-    const height = tileSize * rows;
-
-    canvas.width = width;
-    canvas.height = height;
-
-    // CSS velikost (pro ostrost 1:1)
-    canvas.style.width = width + "px";
-    canvas.style.height = height + "px";
-
-    render();
+    return;
   }
 
-  function getTile(x, y) {
-    if (
-      !currentLevel ||
-      y < 0 ||
-      y >= currentLevel.height ||
-      x < 0 ||
-      x >= currentLevel.width
-    ) {
-      return "D"; // mimo mapu bereme jako neprůchozí
-    }
-    return currentLevel.map[y][x];
+  alert("Výborně! Level je hotový 🎉");
+  // do budoucna: přepnutí na další level
+}
+
+// posun kamery – stránku posuneme tak, aby byl hráč přibližně uprostřed
+function scrollToPlayer(initial) {
+  const playerTile = tiles[player.row]?.[player.col];
+  if (!playerTile) return;
+
+  const rect = playerTile.getBoundingClientRect();
+  const tileSize = rect.height || rect.width || 0;
+
+  const targetTop =
+    window.scrollY + rect.top - window.innerHeight / 2 + tileSize / 2;
+
+  window.scrollTo({
+    top: targetTop,
+    behavior: initial ? "auto" : "smooth"
+  });
+}
+
+// -------------------------
+// Ovládání
+// -------------------------
+
+function handleKeyDown(e) {
+  switch (e.key) {
+    case "ArrowUp":
+    case "w":
+    case "W":
+      e.preventDefault();
+      handleMove(0, -1);
+      break;
+    case "ArrowDown":
+    case "s":
+    case "S":
+      e.preventDefault();
+      handleMove(0, 1);
+      break;
+    case "ArrowLeft":
+    case "a":
+    case "A":
+      e.preventDefault();
+      handleMove(-1, 0);
+      break;
+    case "ArrowRight":
+    case "d":
+    case "D":
+      e.preventDefault();
+      handleMove(1, 0);
+      break;
   }
+}
 
-  function isWalkable(tile) {
-    return tile === "G" || tile === "P" || tile === "Q";
-  }
+function setupTouchControls() {
+  let touchStartX = 0;
+  let touchStartY = 0;
 
-  function movePlayer(dx, dy) {
-    if (awaitingAnswer) return;
+  window.addEventListener(
+    "touchstart",
+    (e) => {
+      const t = e.touches[0];
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+    },
+    { passive: true }
+  );
 
-    const newX = player.x + dx;
-    const newY = player.y + dy;
-    const tile = getTile(newX, newY);
+  window.addEventListener(
+    "touchend",
+    (e) => {
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touchStartX;
+      const dy = t.clientY - touchStartY;
 
-    if (!isWalkable(tile)) return;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
 
-    player.x = newX;
-    player.y = newY;
+      if (Math.max(absX, absY) < 20) return; // krátké šťouchnutí – ignoruj
 
-    handleTileAfterMove(tile, newX, newY);
-    render();
-  }
-
-  function handleTileAfterMove(tile, x, y) {
-    if (tile === "Q") {
-      const key = `${x},${y}`;
-      if (!solvedQuestionTiles.has(key)) {
-        // ještě nezodpovězený příklad
-        const question = generateQuestion();
-        currentCorrectAnswer = question.answer;
-        openQuestionDialog(question.text, () => {
-          // při správné odpovědi
-          solvedQuestionTiles.add(key);
-          solvedQuestions++;
-          updateHud();
-          checkLevelComplete();
-        });
-      }
-    }
-  }
-
-  function checkLevelComplete() {
-    if (solvedQuestions >= totalQuestions) {
-      // zapsat progress do localStorage
-      const progressKey = "mathTrailProgress";
-      let progress = {};
-      try {
-        progress = JSON.parse(localStorage.getItem(progressKey)) || {};
-      } catch {
-        progress = {};
-      }
-
-      const completed = progress.completedLevels || [];
-      if (!completed.includes(currentLevel.id)) {
-        completed.push(currentLevel.id);
-      }
-      progress.completedLevels = completed;
-      localStorage.setItem(progressKey, JSON.stringify(progress));
-
-      // jednoduché dokončení – zatím jen alert
-      setTimeout(() => {
-        alert("Skvěle! Dokončil jsi tento level.");
-      }, 50);
-    }
-  }
-
-  // ---------- Příklady ----------
-
-  function generateQuestion() {
-    // jednoduché sčítání/odčítání do 20, bez záporných výsledků
-    const isAddition = Math.random() < 0.5;
-    let a = randomInt(0, 10);
-    let b = randomInt(0, 10);
-
-    if (!isAddition) {
-      // aby výsledek nebyl záporný
-      if (b > a) [a, b] = [b, a];
-    }
-
-    const text = isAddition ? `${a} + ${b} = ?` : `${a} − ${b} = ?`;
-    const answer = isAddition ? a + b : a - b;
-
-    return { text, answer };
-  }
-
-  function randomInt(min, max) {
-    // včetně min i max
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-  }
-
-  // ---------- Dialog s otázkou ----------
-
-  function openQuestionDialog(questionText, onCorrect) {
-    awaitingAnswer = true;
-
-    if (questionTextEl) questionTextEl.textContent = questionText;
-    if (answerInputEl) {
-      answerInputEl.value = "";
-      answerInputEl.focus();
-    }
-    if (questionFeedbackEl) questionFeedbackEl.textContent = "";
-
-    overlay.classList.remove("hidden");
-
-    const handleSubmit = () => {
-      if (!answerInputEl) return;
-      const value = answerInputEl.value.trim();
-      if (value === "") return;
-
-      const num = Number(value);
-      if (Number.isNaN(num)) {
-        if (questionFeedbackEl)
-          questionFeedbackEl.textContent = "Zadej prosím číslo.";
-        return;
-      }
-
-      if (num === currentCorrectAnswer) {
-        // správně
-        closeDialog();
-        onCorrect?.();
+      if (absX > absY) {
+        // horizontální tah
+        handleMove(dx > 0 ? 1 : -1, 0);
       } else {
-        if (questionFeedbackEl)
-          questionFeedbackEl.textContent = "Zkus to znovu 🙂";
+        // vertikální tah
+        handleMove(0, dy > 0 ? 1 : -1);
       }
-    };
+    },
+    { passive: true }
+  );
+}
 
-    const handleCancel = () => {
-      closeDialog();
-    };
+// -------------------------
+// Start hry
+// -------------------------
 
-    answerSubmitBtn.addEventListener("click", handleSubmit, { once: true });
-    answerCancelBtn.addEventListener("click", handleCancel, { once: true });
-
-    const keyHandler = (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleSubmit();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        handleCancel();
-      }
-    };
-
-    // uložíme si handler na element, abychom ho mohli odregistrovat
-    overlay._keyHandler = keyHandler;
-    window.addEventListener("keydown", keyHandler);
-  }
-
-  function closeDialog() {
-    awaitingAnswer = false;
-    overlay.classList.add("hidden");
-
-    if (overlay._keyHandler) {
-      window.removeEventListener("keydown", overlay._keyHandler);
-      overlay._keyHandler = null;
-    }
-
-    // po zavření dialogu může dítě hned pokračovat šipkami
-  }
-
-  // ---------- Vykreslování ----------
-
-  function render() {
-    if (!currentLevel) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // podklad
-    ctx.fillStyle = "#2b2623";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // dlaždice
-    for (let y = 0; y < rows; y++) {
-      const row = currentLevel.map[y];
-      for (let x = 0; x < cols; x++) {
-        const tile = row[x];
-        drawTile(x, y, tile);
-      }
-    }
-
-    // grid (aby byly vidět jednotlivé tiles)
-    ctx.strokeStyle = "rgba(0,0,0,0.25)";
-    ctx.lineWidth = 1;
-    for (let x = 0; x <= cols; x++) {
-      ctx.beginPath();
-      ctx.moveTo(x * tileSize + 0.5, 0);
-      ctx.lineTo(x * tileSize + 0.5, rows * tileSize);
-      ctx.stroke();
-    }
-    for (let y = 0; y <= rows; y++) {
-      ctx.beginPath();
-      ctx.moveTo(0, y * tileSize + 0.5);
-      ctx.lineTo(cols * tileSize, y * tileSize + 0.5);
-      ctx.stroke();
-    }
-
-    // hráč
-    drawPlayer();
-  }
-
-  function drawTile(x, y, tile) {
-    const px = x * tileSize;
-    const py = y * tileSize;
-
-    // základ – tráva
-    if (tile === "G" || tile === "Q") {
-      ctx.fillStyle = "#2f8a3b"; // zelená
-      ctx.fillRect(px, py, tileSize, tileSize);
-    }
-
-    if (tile === "P") {
-      ctx.fillStyle = "#6b4731"; // cesta
-      ctx.fillRect(px, py, tileSize, tileSize);
-    }
-
-    if (tile === "D") {
-      ctx.fillStyle = "#4f3626"; // tmavá hlína / okraj
-      ctx.fillRect(px, py, tileSize, tileSize);
-    }
-
-    if (tile === "B") {
-      ctx.fillStyle = "#2f8a3b";
-      ctx.fillRect(px, py, tileSize, tileSize);
-      ctx.fillStyle = "#1f5c27"; // keř
-      const margin = tileSize * 0.15;
-      ctx.fillRect(px + margin, py + margin, tileSize - 2 * margin, tileSize - 2 * margin);
-    }
-
-    if (tile === "Q") {
-      // symbol otázky/“mince”
-      const key = `${x},${y}`;
-      if (!solvedQuestionTiles.has(key)) {
-        ctx.fillStyle = "#ffd94a";
-        ctx.beginPath();
-        const r = tileSize * 0.25;
-        ctx.arc(px + tileSize / 2, py + tileSize / 2, r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  }
-
-  function drawPlayer() {
-    const px = player.x * tileSize;
-    const py = player.y * tileSize;
-
-    const margin = tileSize * 0.15;
-    ctx.fillStyle = "#3b7cff";
-    ctx.beginPath();
-    ctx.roundRect(
-      px + margin,
-      py + margin,
-      tileSize - 2 * margin,
-      tileSize - 2 * margin,
-      tileSize * 0.2
-    );
-    ctx.fill();
-  }
-
-  // ---------- Ovládání ----------
-
-  function handleKeyDown(e) {
-    if (awaitingAnswer) return;
-
-    switch (e.key) {
-      case "ArrowUp":
-      case "w":
-      case "W":
-        e.preventDefault();
-        movePlayer(0, -1);
-        break;
-      case "ArrowDown":
-      case "s":
-      case "S":
-        e.preventDefault();
-        movePlayer(0, 1);
-        break;
-      case "ArrowLeft":
-      case "a":
-      case "A":
-        e.preventDefault();
-        movePlayer(-1, 0);
-        break;
-      case "ArrowRight":
-      case "d":
-      case "D":
-        e.preventDefault();
-        movePlayer(1, 0);
-        break;
-    }
-  }
+function init() {
+  createBaseLayout();
+  loadProgress();
+  startLevel(currentLevelIndex);
 
   window.addEventListener("keydown", handleKeyDown);
-  window.addEventListener("resize", resizeCanvas);
+  setupTouchControls();
+}
 
-  // ---------- Start hry ----------
-
-  loadLevel(0);
-})();
+window.addEventListener("DOMContentLoaded", init);
