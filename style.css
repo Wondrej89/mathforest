@@ -1,48 +1,56 @@
-/* --- Základní nastavení --- */
 html, body {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
-  background: #111;
-  overflow: hidden; /* Zabrání scrollování stránky */
+  background: #111; /* Tmavé pozadí okolo "mobilu" */
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  touch-action: none; /* Důležité pro mobily - vypne gesta prohlížeče */
+  touch-action: none;
+  overflow: hidden;
+  /* Flexbox vycentruje hru na monitoru */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 #game-container {
   position: relative;
-  width: 100vw;
-  height: 100vh;
+  /* Klíčové nastavení pro poměr stran 9:16 */
+  width: 100%;
+  max-width: 56.25vh; /* Zajistí poměr 9:16 podle výšky (9/16 = 0.5625) */
+  height: 100%;
+  max-height: 100vh;
+  aspect-ratio: 9 / 16;
+  
+  background: #000; /* Pozadí uvnitř hry */
+  box-shadow: 0 0 50px rgba(0,0,0,0.5); /* Stín pro hezký efekt na PC */
+  overflow: hidden;
 }
 
-/* Canvas je na pozadí */
 canvas {
   display: block;
   width: 100%;
   height: 100%;
-  image-rendering: pixelated; /* Ostré pixely pro retro vzhled */
+  image-rendering: pixelated;
 }
 
-/* --- UI Vrstva --- */
+/* --- Zbytek CSS (UI vrstva) zůstává stejný, jen se přizpůsobí kontejneru --- */
 #ui-layer {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  pointer-events: none; /* Kliknutí prochází skrz prázdná místa do hry */
+  pointer-events: none;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
 }
 
-/* Povolíme klikání jen na konkrétní prvky v UI */
 #hud, #quiz-overlay, #mobile-controls {
   pointer-events: auto;
 }
 
-/* --- HUD (Horní lišta) --- */
 #hud {
   display: flex;
   justify-content: space-between;
@@ -57,10 +65,8 @@ canvas {
   border: 2px solid #fff;
   font-weight: bold;
   font-size: 1.1rem;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
 }
 
-/* --- Kvízové okno --- */
 #quiz-overlay {
   position: absolute;
   top: 0;
@@ -74,71 +80,54 @@ canvas {
   z-index: 100;
 }
 
-.hidden {
-  display: none !important;
-}
+.hidden { display: none !important; }
 
 .quiz-panel {
   background: #333;
   border: 4px solid #fff;
   border-radius: 20px;
   padding: 20px;
-  width: 90%;
-  max-width: 400px;
+  width: 85%; /* Trochu užší aby se vešlo do mobilního layoutu */
   text-align: center;
   color: white;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
 
 .equation-display {
-  font-size: 2.5rem;
+  font-size: 2rem;
   margin: 20px 0;
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
   font-weight: bold;
 }
 
 .slot {
   background: #222;
   border: 2px dashed #888;
-  min-width: 60px;
-  padding: 5px 10px;
+  min-width: 50px;
+  padding: 5px;
   border-radius: 8px;
   color: #ffd94a;
-}
-
-.slot.filled {
-  border-style: solid;
-  border-color: #fff;
 }
 
 #tokens-container {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   margin: 20px 0;
-  min-height: 60px;
 }
 
-/* Tlačítka s čísly */
 .token {
   background: #555;
   border: 2px solid #888;
   color: white;
-  font-size: 1.5rem;
-  width: 60px;
-  height: 60px;
+  font-size: 1.2rem;
+  width: 50px;
+  height: 50px;
   border-radius: 10px;
   cursor: pointer;
-  font-weight: bold;
-  transition: transform 0.1s, background 0.2s;
-}
-
-.token:active {
-  transform: scale(0.9);
 }
 
 .token.selected {
@@ -147,40 +136,29 @@ canvas {
   border-color: white;
 }
 
-/* Ovládací tlačítka v kvízu */
 .quiz-controls {
   display: flex;
   justify-content: center;
-  gap: 15px;
+  gap: 10px;
   margin-top: 10px;
 }
 
 button {
-  font-family: inherit;
-  border: none;
-  border-radius: 8px;
-  padding: 12px 24px;
+  padding: 10px 20px;
   font-size: 1rem;
-  font-weight: bold;
+  border-radius: 8px;
+  border: none;
   cursor: pointer;
 }
 
 .primary-btn { background: #4caf50; color: white; }
 .secondary-btn { background: #f44336; color: white; }
 
-#quiz-message {
-  height: 20px;
-  margin-bottom: 10px;
-  font-size: 0.9rem;
-  color: #ccc;
-}
-
-/* --- Mobilní ovládání --- */
 #mobile-controls {
   padding: 20px;
   padding-bottom: 40px;
   display: flex;
-  justify-content: flex-start; /* Dpad vlevo */
+  justify-content: center; /* Vycentrování ovládání */
   align-items: flex-end;
 }
 
@@ -188,33 +166,18 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
 }
-
-.dpad-row {
-  display: flex;
-  gap: 8px;
-}
-
+.dpad-row { display: flex; gap: 5px; }
 .dpad-btn {
-  width: 60px;
-  height: 60px;
+  width: 50px;
+  height: 50px;
   background: rgba(255, 255, 255, 0.15);
   border: 2px solid rgba(255, 255, 255, 0.4);
-  border-radius: 12px;
+  border-radius: 10px;
   color: white;
-  font-size: 24px;
+  font-size: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  user-select: none;
-}
-
-.dpad-btn:active {
-  background: rgba(255, 255, 255, 0.4);
-}
-
-/* Na PC s klávesnicí skryjeme dotykové ovládání, pokud není dotyková obrazovka */
-@media (min-width: 1024px) {
-  #mobile-controls { display: none; }
 }
