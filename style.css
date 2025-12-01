@@ -1,14 +1,9 @@
-/* style.css – minimální verze pro canvas hru */
-
-/* Základní reset */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* style.css – vše je v canvasu, HTML jen drží plátno */
 
 html,
 body {
+  margin: 0;
+  padding: 0;
   width: 100%;
   height: 100%;
   background: #000000;
@@ -17,25 +12,11 @@ body {
     sans-serif;
 }
 
-/* Obal hry – jen kvůli případnému pozdějšímu rozšíření */
-#game-root {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #000000;
-}
-
-/* Samotné plátno s hrou */
+/* canvas vyplní celé okno, poměr stran a mřížku řeší game.js */
 #gameCanvas {
   display: block;
   width: 100vw;
   height: 100vh;
-
-  /* lepší vzhled pro pixely / malé sprity */
-  image-rendering: pixelated;
-
-  /* na mobilu vypnout scroll při swipování */
-  touch-action: none;
+  touch-action: none;      /* aby se stránka na mobilu neposouvala */
+  image-rendering: pixelated; /* hezčí look u malých spritů */
 }
