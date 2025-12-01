@@ -1,14 +1,17 @@
-import { LEVELS, TILE_SIZE, isBlocked, findQuestionAt, findPlayerStart } from './js/levels.js';
+import { LEVELS, isBlocked, findQuestionAt, findPlayerStart } from './js/levels.js';
 import { loadSave, saveProgress } from './js/storage.js';
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-const container = document.getElementById("game-container"); // Reference na kontejner
+const container = document.getElementById("game-container");
 
 let currentLevelIndex = 0;
 let levelData = null;
 let player = { x: 0, y: 0 };
 let camera = { x: 0, y: 0 };
+
+// Dynamická velikost dlaždice (spočítá se podle šířky okna)
+let tileSize = 32; 
 
 const ui = {
   overlay: document.getElementById("quiz-overlay"),
@@ -22,8 +25,8 @@ const ui = {
 };
 
 function initGame() {
-  resize(); // Nastaví velikost plátna podle kontejneru
-  loadLevel(0);
+  loadLevel(0); // Nejdřív načteme data levelu (potřebujeme znát šířku mapy)
+  resize();     // Pak dopočítáme velikost dlaždic
   setupInputs();
   requestAnimationFrame(gameLoop);
 }
@@ -42,6 +45,9 @@ function loadLevel(index) {
   player.x = start.x;
   player.y = start.y;
   ui.levelName.textContent = levelData.name;
+  
+  // Pokud se změní level, přepočítáme zoom, aby seděl
+  if (container) resize();
 }
 
 function gameLoop() {
@@ -51,84 +57,122 @@ function gameLoop() {
 }
 
 function updateCamera() {
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
-  let targetX = player.x * TILE_SIZE + TILE_SIZE/2;
-  let targetY = player.y * TILE_SIZE + TILE_SIZE/2;
-  camera.x = targetX - centerX;
-  camera.y = targetY - centerY;
+  if (!levelData) return;
+
+  // 1. Zjistíme rozměry světa v pixelech
+  const mapWidthPx = levelData.width * tileSize;
+  const mapHeightPx = levelData.height * tileSize;
+
+  // 2. Kde by kamera chtěla být (střed hráče - střed obrazovky)
+  let targetX = (player.x * tileSize + tileSize / 2) - (canvas.width / 2);
+  let targetY = (player.y * tileSize + tileSize / 2) - (canvas.height / 2);
+
+  // 3. Omezení (Clamping) - nepustíme kameru mimo mapu
+  // X osa: Kamera nesmí jít do mínusu (0) a nesmí jít dál než je šířka mapy minus šířka obrazovky
+  const maxCamX = mapWidthPx - canvas.width;
+  const maxCamY = mapHeightPx - canvas.height;
+
+  // Math.max(0, ...) zajistí, že nepůjdeme pod nulu
+  // Math.min(max, ...) zajistí, že nepůjdeme za konec mapy
+  // Pokud je mapa menší než obrazovka, maxCam bude záporné -> použijeme 0 (zarovnání vlevo/nahoru) nebo vycentrujeme.
+  
+  if (maxCamX < 0) {
+    // Mapa je užší než obrazovka -> vycentrujeme ji
+    camera.x = (mapWidthPx - canvas.width) / 2;
+  } else {
+    camera.x = Math.max(0, Math.min(targetX, maxCamX));
+  }
+
+  if (maxCamY < 0) {
+    // Mapa je nižší než obrazovka -> vycentrujeme ji
+    camera.y = (mapHeightPx - canvas.height) / 2;
+  } else {
+    camera.y = Math.max(0, Math.min(targetY, maxCamY));
+  }
 }
 
 function draw() {
+  // Pozadí canvasu (kdyby náhodou něco prosvítalo)
   ctx.fillStyle = "#111"; 
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (!levelData) return;
 
   ctx.save();
+  // Posun kamery - zaokrouhlujeme pro ostré pixely
   ctx.translate(-Math.floor(camera.x), -Math.floor(camera.y));
 
-  // --- OPRAVA CHYBY: Bezpečnější vykreslování ---
-  // Iterujeme přes výšku definovanou v levelData
+  // Iterujeme přes mapu
   for (let y = 0; y < levelData.height; y++) {
-    // ZKONTROLUJEME, ZDA ŘÁDEK EXISTUJE
-    // Pokud v levels.js chybí řádek v objectMap nebo backgroundMap, přeskočíme ho (hra nespadne)
-    if (!levelData.backgroundMap[y] || !levelData.objectMap[y]) {
-        continue; 
-    }
+    // Bezpečnostní kontrola řádku
+    if (!levelData.backgroundMap[y] || !levelData.objectMap[y]) continue;
 
     for (let x = 0; x < levelData.width; x++) {
-      // 1. Pozadí
-      // Zkontrolujeme i znak na pozici x (prevence erroru "reading '0'")
-      const bgChar = levelData.backgroundMap[y][x];
-      const posX = x * TILE_SIZE;
-      const posY = y * TILE_SIZE;
-      
-      if (bgChar === "#") ctx.fillStyle = "#554d44"; 
-      else ctx.fillStyle = "#2d8b3a"; 
-      ctx.fillRect(posX, posY, TILE_SIZE, TILE_SIZE);
-      ctx.strokeStyle = "rgba(0,0,0,0.1)";
-      ctx.strokeRect(posX, posY, TILE_SIZE, TILE_SIZE);
+      const posX = x * tileSize;
+      const posY = y * tileSize;
 
-      // 2. Objekty
+      // --- 1. Pozadí ---
+      const bgChar = levelData.backgroundMap[y][x];
+      if (bgChar === "#") ctx.fillStyle = "#554d44"; 
+      else ctx.fillStyle = "#2d8b3a"; // Tráva
+      
+      // Nakreslíme čtverec o velikosti 'tileSize'
+      ctx.fillRect(posX, posY, tileSize, tileSize);
+      
+      // Mřížka (volitelné, teď ji uděláme slabší)
+      ctx.strokeStyle = "rgba(0,0,0,0.05)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(posX, posY, tileSize, tileSize);
+
+      // --- 2. Objekty ---
       const objChar = levelData.objectMap[y][x];
 
       if (objChar === "T") {
+        // Strom
         ctx.fillStyle = "#1e5927";
-        ctx.fillRect(posX + 2, posY - TILE_SIZE * 0.5, TILE_SIZE - 4, TILE_SIZE * 1.5);
+        // Strom nakreslíme trochu větší než dlaždici pro efekt
+        ctx.fillRect(posX + tileSize * 0.1, posY - tileSize * 0.2, tileSize * 0.8, tileSize * 1.2);
       } 
       else if (objChar === "Q") {
+        // Otázka
         const qData = findQuestionAt(levelData, x, y);
         const isSolved = levelData.solvedQuestions.includes(qData?.id);
         
         if (!isSolved) {
            ctx.fillStyle = "#ffd94a";
            ctx.beginPath();
-           ctx.arc(posX + TILE_SIZE/2, posY + TILE_SIZE/2, TILE_SIZE * 0.4, 0, Math.PI*2);
+           // Kruh uprostřed dlaždice
+           ctx.arc(posX + tileSize/2, posY + tileSize/2, tileSize * 0.35, 0, Math.PI*2);
            ctx.fill();
+           
            ctx.fillStyle = "black";
-           ctx.font = `bold ${TILE_SIZE * 0.6}px sans-serif`;
+           ctx.font = `bold ${tileSize * 0.6}px sans-serif`;
            ctx.textAlign = "center";
            ctx.textBaseline = "middle";
-           ctx.fillText("?", posX + TILE_SIZE/2, posY + TILE_SIZE/2);
+           // Text "?" vycentrujeme
+           ctx.fillText("?", posX + tileSize/2, posY + tileSize/2 + (tileSize*0.05));
         }
       }
     }
   }
 
-  // Hráč
+  // --- 3. Hráč ---
   ctx.fillStyle = "#3fa7ff";
-  const pMargin = TILE_SIZE * 0.1;
+  const pMargin = tileSize * 0.15; // Odsazení hráče od kraje dlaždice
+  const pSize = tileSize - pMargin * 2;
+  
   ctx.fillRect(
-    player.x * TILE_SIZE + pMargin, 
-    player.y * TILE_SIZE + pMargin, 
-    TILE_SIZE - pMargin*2, 
-    TILE_SIZE - pMargin*2
+    player.x * tileSize + pMargin, 
+    player.y * tileSize + pMargin, 
+    pSize, 
+    pSize
   );
   
+  // Oči hráče
   ctx.fillStyle = "white";
-  ctx.fillRect(player.x * TILE_SIZE + TILE_SIZE*0.3, player.y * TILE_SIZE + TILE_SIZE*0.3, TILE_SIZE*0.15, TILE_SIZE*0.15);
-  ctx.fillRect(player.x * TILE_SIZE + TILE_SIZE*0.6, player.y * TILE_SIZE + TILE_SIZE*0.3, TILE_SIZE*0.15, TILE_SIZE*0.15);
+  const eyeSize = pSize * 0.2;
+  ctx.fillRect(player.x * tileSize + tileSize*0.3, player.y * tileSize + tileSize*0.35, eyeSize, eyeSize);
+  ctx.fillRect(player.x * tileSize + tileSize*0.6, player.y * tileSize + tileSize*0.35, eyeSize, eyeSize);
 
   ctx.restore();
 }
@@ -145,7 +189,7 @@ function movePlayer(dx, dy) {
 }
 
 function checkInteraction() {
-  if (!levelData.objectMap[player.y]) return; // Záchrana proti pádu
+  if (!levelData.objectMap[player.y]) return;
   const char = levelData.objectMap[player.y][player.x];
   if (char === "Q") {
     const q = findQuestionAt(levelData, player.x, player.y);
@@ -232,10 +276,20 @@ function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// --- ZMĚNA: Resize se řídí velikostí kontejneru, ne okna ---
 function resize() {
+  // Nastavíme velikost canvasu podle kontejneru
   canvas.width = container.clientWidth;
   canvas.height = container.clientHeight;
+  
+  // Zde je ten trik:
+  // Pokud máme načtený level, spočítáme velikost dlaždice tak, aby se mapa vešla na šířku.
+  if (levelData) {
+    // Vydělíme šířku obrazovky počtem dlaždic v mapě (levelData.width je u tebe 12)
+    tileSize = Math.floor(canvas.width / levelData.width);
+  } else {
+    tileSize = 32; // Fallback
+  }
+  
   ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener("resize", resize);
