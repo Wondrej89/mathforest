@@ -449,185 +449,180 @@
 }
 
 
-  function drawQuizOverlay() {
-    const q = currentQuiz;
+ function drawQuizOverlay() {
+  const q = currentQuiz;
 
-    // průhledné pozadí přes celou hrací plochu
-    ctx.fillStyle = COLORS.overlayBg;
-    ctx.fillRect(worldLeft, worldTop, worldWidthPx, worldHeightPx);
+  // průhledné pozadí přes celou hrací plochu
+  ctx.fillStyle = COLORS.overlayBg;
+  ctx.fillRect(worldLeft, worldTop, worldWidthPx, worldHeightPx);
 
-    // panel
-    const panelW = Math.min(worldWidthPx * 0.85, tileSize * 12);
-    const panelH = tileSize * 8;
-    const panelX = worldLeft + (worldWidthPx - panelW) / 2;
-    const panelY = worldTop + (worldHeightPx - panelH) / 2;
+  // panel
+  const panelW = worldWidthPx * 0.9;
+  const panelH = tileSize * 7;
+  const panelX = worldLeft + (worldWidthPx - panelW) / 2;
+  const panelY = worldTop + (worldHeightPx - panelH) / 2;
 
-    ctx.fillStyle = COLORS.panelBg;
-    ctx.strokeStyle = COLORS.panelBorder;
-    ctx.lineWidth = 3;
+  ctx.fillStyle = COLORS.panelBg;
+  ctx.strokeStyle = COLORS.panelBorder;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(panelX, panelY, panelW, panelH, tileSize * 0.3);
+  ctx.fill();
+  ctx.stroke();
+
+  // ---- nastavení velikostí písem (clamp) ----
+  const titleFontPx    = Math.min(tileSize * 0.5, 26); // titulek
+  const eqFontPx       = Math.min(tileSize * 0.8, 32); // 1 [ ] 2 = [ ]
+  const infoFontPx     = Math.min(tileSize * 0.45, 16); // instrukce
+  const tokenFontPx    = Math.min(tileSize * 0.7, 26); // čísla na kartičkách
+  const buttonFontPx   = Math.min(tileSize * 0.6, 22); // "Potvrdit"
+  const messageFontPx  = Math.min(tileSize * 0.45, 16); // hláška
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = COLORS.hudText;
+
+  // titulek
+  ctx.font = `${titleFontPx}px system-ui`;
+  ctx.fillText(
+    "Doplň příklad přetažením kartiček",
+    panelX + panelW / 2,
+    panelY + tileSize * 0.4
+  );
+
+  // Rovnice: a [op] b = [result]
+  const equationY = panelY + tileSize * 2;
+  ctx.font = `${eqFontPx}px system-ui`;
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = COLORS.slotText;
+
+  let xCursor = panelX + tileSize * 1.0;
+
+  // číslo a
+  const aText = String(q.a);
+  ctx.textAlign = "left";
+  ctx.fillText(aText, xCursor, equationY);
+  xCursor += ctx.measureText(aText).width + tileSize * 0.5;
+
+  // op slot
+  const slotSize = tileSize * 1.2;
+  const opSlot = {
+    x: xCursor,
+    y: equationY - slotSize / 2,
+    w: slotSize,
+    h: slotSize
+  };
+  drawSlot(opSlot, q.chosenOp, q.activeSlot === "op");
+  xCursor += slotSize + tileSize * 0.5;
+
+  // číslo b
+  const bText = String(q.b);
+  ctx.fillStyle = COLORS.slotText;
+  ctx.fillText(bText, xCursor, equationY);
+  xCursor += ctx.measureText(bText).width + tileSize * 0.5;
+
+  // "="
+  ctx.fillText("=", xCursor, equationY);
+  xCursor += ctx.measureText("=").width + tileSize * 0.5;
+
+  // result slot
+  const resSlot = {
+    x: xCursor,
+    y: equationY - slotSize / 2,
+    w: slotSize * 1.2,
+    h: slotSize
+  };
+  drawSlot(resSlot, q.chosenRes, q.activeSlot === "res");
+
+  q.opSlot = opSlot;
+  q.resSlot = resSlot;
+
+  // instrukce k ovládání
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.font = `${infoFontPx}px system-ui`;
+  ctx.fillStyle = COLORS.slotText;
+  ctx.fillText(
+    "Klepni na čtvereček a potom na kartičku. Znovu klepnutím kartičku vrátíš.",
+    panelX + panelW / 2,
+    equationY + slotSize
+  );
+
+  // kartičky (tokeny)
+  const tokensTop = equationY + slotSize + tileSize * 1.4;
+  const btnSize = tileSize * 1.4;
+  const btnMargin = tileSize * 0.3;
+  const tokensPerRow = Math.max(
+    1,
+    Math.floor((panelW - tileSize * 1.5) / (btnSize + btnMargin))
+  );
+
+  q.tokenButtons = [];
+  ctx.font = `${tokenFontPx}px system-ui`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+
+  for (let i = 0; i < q.tokens.length; i++) {
+    const token = q.tokens[i];
+    const row = Math.floor(i / tokensPerRow);
+    const col = i % tokensPerRow;
+
+    const bx = panelX + tileSize * 0.75 + col * (btnSize + btnMargin);
+    const by = tokensTop + row * (btnSize + btnMargin);
+
+    const rect = { x: bx, y: by, w: btnSize, h: btnSize };
+    q.tokenButtons.push(rect);
+
     ctx.beginPath();
-    ctx.roundRect(panelX, panelY, panelW, panelH, tileSize * 0.3);
+    ctx.roundRect(rect.x, rect.y, rect.w, rect.h, tileSize * 0.2);
+    ctx.fillStyle = token.used ? COLORS.tokenUsedBg : COLORS.tokenBg;
     ctx.fill();
+    ctx.strokeStyle = COLORS.tokenBorder;
+    ctx.lineWidth = 2;
     ctx.stroke();
 
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.fillStyle = COLORS.hudText;
-    ctx.font = `${Math.floor(tileSize * 0.7)}px system-ui`;
-    ctx.fillText(
-      "Doplň příklad přetažením kartiček",
-      panelX + panelW / 2,
-      panelY + tileSize * 0.4
-    );
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(token.text, rect.x + rect.w / 2, rect.y + rect.h / 2);
+  }
 
-    // Rovnice: a [op] b = [result]
-    const equationY = panelY + tileSize * 2;
-    ctx.font = `${Math.floor(tileSize * 0.8)}px system-ui`;
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = COLORS.slotText;
+  // tlačítko Potvrdit
+  const btnW = tileSize * 4;
+  const btnH = tileSize * 1.2;
+  const btnX = panelX + panelW - btnW - tileSize * 0.8;
+  const btnY = panelY + panelH - btnH - tileSize * 0.6;
 
-    let xCursor = panelX + tileSize * 1.0;
+  const confirmButton = { x: btnX, y: btnY, w: btnW, h: btnH };
+  q.confirmButton = confirmButton;
 
-    // číslo a
-    const aText = String(q.a);
+  ctx.beginPath();
+  ctx.roundRect(confirmButton.x, confirmButton.y, confirmButton.w, confirmButton.h, tileSize * 0.25);
+  ctx.fillStyle = COLORS.buttonBg;
+  ctx.fill();
+
+  ctx.fillStyle = COLORS.buttonText;
+  ctx.font = `${buttonFontPx}px system-ui`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(
+    "Potvrdit",
+    confirmButton.x + confirmButton.w / 2,
+    confirmButton.y + confirmButton.h / 2
+  );
+
+  // zpráva k příkladu (chyba apod.)
+  if (q.message) {
     ctx.textAlign = "left";
-    ctx.fillText(aText, xCursor, equationY);
-    xCursor += ctx.measureText(aText).width + tileSize * 0.5;
-
-    // op slot
-    const slotSize = tileSize * 1.2;
-    const opSlot = {
-      x: xCursor,
-      y: equationY - slotSize / 2,
-      w: slotSize,
-      h: slotSize
-    };
-    drawSlot(opSlot, q.chosenOp, q.activeSlot === "op");
-    xCursor += slotSize + tileSize * 0.5;
-
-    // číslo b
-    const bText = String(q.b);
-    ctx.fillStyle = COLORS.slotText;
-    ctx.fillText(bText, xCursor, equationY);
-    xCursor += ctx.measureText(bText).width + tileSize * 0.5;
-
-    // "="
-    ctx.fillText("=", xCursor, equationY);
-    xCursor += ctx.measureText("=").width + tileSize * 0.5;
-
-    // result slot
-    const resSlot = {
-      x: xCursor,
-      y: equationY - slotSize / 2,
-      w: slotSize * 1.2,
-      h: slotSize
-    };
-    drawSlot(resSlot, q.chosenRes, q.activeSlot === "res");
-
-    q.opSlot = opSlot;
-    q.resSlot = resSlot;
-
-    // instrukce k ovládání
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.font = `${Math.floor(tileSize * 0.5)}px system-ui`;
-    ctx.fillStyle = COLORS.slotText;
-    ctx.fillText(
-      "Klepni na čtvereček a potom na kartičku. Znovu klepnutím kartičku vrátíš.",
-      panelX + panelW / 2,
-      equationY + slotSize
-    );
-
-    // kartičky (tokeny)
-    const tokensTop = equationY + slotSize + tileSize * 1.4;
-    const btnSize = tileSize * 1.4;
-    const btnMargin = tileSize * 0.3;
-    const tokensPerRow = Math.max(3, Math.floor(panelW / (btnSize * 1.4)));
-
-
-    q.tokenButtons = [];
-    ctx.font = `${Math.floor(tileSize * 0.7)}px system-ui`;
     ctx.textBaseline = "middle";
-    ctx.textAlign = "center";
-
-    for (let i = 0; i < q.tokens.length; i++) {
-      const token = q.tokens[i];
-      const row = Math.floor(i / tokensPerRow);
-      const col = i % tokensPerRow;
-
-      const bx =
-        panelX +
-        tileSize * 0.75 +
-        col * (btnSize + btnMargin);
-      const by =
-        tokensTop + row * (btnSize + btnMargin);
-
-      const rect = { x: bx, y: by, w: btnSize, h: btnSize };
-      q.tokenButtons.push(rect);
-
-      ctx.beginPath();
-      ctx.roundRect(
-        rect.x,
-        rect.y,
-        rect.w,
-        rect.h,
-        tileSize * 0.2
-      );
-      ctx.fillStyle = token.used
-        ? COLORS.tokenUsedBg
-        : COLORS.tokenBg;
-      ctx.fill();
-      ctx.strokeStyle = COLORS.tokenBorder;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      ctx.fillStyle = "#ffffff";
-      ctx.fillText(token.text, rect.x + rect.w / 2, rect.y + rect.h / 2);
-    }
-
-    // tlačítko Potvrdit
-    const btnW = tileSize * 4;
-    const btnH = tileSize * 1.2;
-    const btnX = panelX + panelW - btnW - tileSize * 0.8;
-    const btnY = panelY + panelH - btnH - tileSize * 0.6;
-
-    const confirmButton = { x: btnX, y: btnY, w: btnW, h: btnH };
-    q.confirmButton = confirmButton;
-
-    ctx.beginPath();
-    ctx.roundRect(
-      confirmButton.x,
-      confirmButton.y,
-      confirmButton.w,
-      confirmButton.h,
-      tileSize * 0.25
-    );
-    ctx.fillStyle = COLORS.buttonBg;
-    ctx.fill();
-
-    ctx.fillStyle = COLORS.buttonText;
-    ctx.font = `${Math.floor(tileSize * 0.6)}px system-ui`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+    ctx.fillStyle = q.messageColor;
+    ctx.font = `${messageFontPx}px system-ui`;
     ctx.fillText(
-      "Potvrdit",
-      confirmButton.x + confirmButton.w / 2,
+      q.message,
+      panelX + tileSize * 0.8,
       confirmButton.y + confirmButton.h / 2
     );
-
-    // zpráva k příkladu (chyba apod.)
-    if (q.message) {
-      ctx.textAlign = "left";
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = q.messageColor;
-      ctx.font = `${Math.floor(tileSize * 0.5)}px system-ui`;
-      ctx.fillText(
-        q.message,
-        panelX + tileSize * 0.8,
-        confirmButton.y + confirmButton.h / 2
-      );
-    }
   }
+}
+
 
   function drawSlot(rect, value, isActive) {
     ctx.beginPath();
