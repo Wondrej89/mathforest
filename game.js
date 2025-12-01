@@ -1,651 +1,339 @@
-// js/game.js
-// Jednoduchý prototyp hry: průzkum lesní stezky + minihra s příkladem
-// Všechen text a GUI je vykreslený přímo do canvasu.
+import { LEVELS, TILE_SIZE, isBlocked, findQuestionAt, findPlayerStart } from './levels.js';
+import { loadSave, saveProgress } from './storage.js';
 
-(function () {
-  const canvas = document.getElementById("gameCanvas");
-  const ctx = canvas.getContext("2d");
+// --- Nastavení Canvasu ---
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
 
-  // --- Herní mřížka (logické rozlišení) ---
-  const GRID_COLS = 7;
-  const GRID_ROWS = 20;
+// --- Stav hry ---
+let currentLevelIndex = 0;
+let levelData = null; // Aktuálně načtený objekt levelu
+let player = { x: 0, y: 0 };
+let camera = { x: 0, y: 0 };
 
-  let canvasWidth = 0;
-  let canvasHeight = 0;
-  let tileSize = 32;
-  let worldWidthPx = 0;
-  let worldHeightPx = 0;
-  let worldLeft = 0;
-  let worldTop = 0;
+// UI Elementy (cache pro rychlejší přístup)
+const ui = {
+  overlay: document.getElementById("quiz-overlay"),
+  eqA: document.getElementById("eq-a"),
+  eqOp: document.getElementById("eq-op"),
+  eqB: document.getElementById("eq-b"),
+  eqRes: document.getElementById("eq-res"),
+  tokensContainer: document.getElementById("tokens-container"),
+  msg: document.getElementById("quiz-message"),
+  levelName: document.getElementById("level-name")
+};
 
-  const COLORS = {
-    bg: "#000000",
-    wall: "#4b352a",
-    grass: "#2d8b3a",
-    path: "#865439",
-    question: "#ffd94a",
-    questionBorder: "#d1aa00",
-    player: "#3fa7ff",
-    playerBorder: "#ffffff",
-    hudText: "#ffffff",
-    hudShadow: "rgba(0,0,0,0.7)",
-    overlayBg: "rgba(0,0,0,0.75)",
-    panelBg: "#333333",
-    panelBorder: "#ffffff",
-    slotBg: "#222222",
-    slotActive: "#555555",
-    slotText: "#ffffff",
-    tokenBg: "#444444",
-    tokenUsedBg: "#222222",
-    tokenBorder: "#dddddd",
-    buttonBg: "#4caf50",
-    buttonText: "#ffffff",
-    errorText: "#ff8080",
-    successText: "#9cff9c"
-  };
-
-  // --- Definice levelu 1 (Lesní stezka) ---
-  // W = stěna / okraj, G = tráva, P = cesta, Q = cesta + otázka
-  const level1 = {
-    id: 1,
-    name: "Lesní stezka",
-    tiles: [
-      "WWWWWWW",
-      "WGGPGGW",
-      "WGGPGGW",
-      "WGGQGGW",
-      "WGGPGGW",
-      "WGGPGGW",
-      "WGGQGGW",
-      "WGGPGGW",
-      "WGGPGGW",
-      "WGGQGGW",
-      "WGGPGGW",
-      "WGGPGGW",
-      "WGGQGGW",
-      "WGGPGGW",
-      "WGGPGGW",
-      "WGGQGGW",
-      "WGGPGGW",
-      "WGGPGGW",
-      "WGGPGGW",
-      "WWWWWWW"
-    ]
-  };
-
-  let currentLevel = level1;
-  let totalQuestions = countQuestions(currentLevel);
-  let solvedQuestions = 0;
-
-  const player = {
-    col: 3,
-    row: GRID_ROWS - 2,
-    size: 0.6
-  };
-
-  let gameState = "explore"; // "explore" | "quiz"
-  let currentQuiz = null;
-  let lastMessage = "";
-  let lastMessageColor = COLORS.successText;
-  let lastMessageTimer = 0;
-
-  // --- Pomocné funkce ---
-
-  function countQuestions(level) {
-    let count = 0;
-    for (let r = 0; r < GRID_ROWS; r++) {
-      const row = level.tiles[r];
-      for (let c = 0; c < GRID_COLS; c++) {
-        if (row.charAt(c) === "Q") count++;
-      }
-    }
-    return count;
-  }
-
-  function getTile(col, row) {
-    return currentLevel.tiles[row].charAt(col);
-  }
-
-  function setTile(col, row, ch) {
-    const rowStr = currentLevel.tiles[row];
-    currentLevel.tiles[row] =
-      rowStr.substring(0, col) + ch + rowStr.substring(col + 1);
-  }
-
-  function isWalkable(col, row) {
-    const ch = getTile(col, row);
-    return ch !== "W";
-  }
-
-  function randInt(min, maxInclusive) {
-    return Math.floor(Math.random() * (maxInclusive - min + 1)) + min;
-  }
-
-  // --- Resize / layout ---
-
-  function resize() {
-    canvasWidth = window.innerWidth;
-    canvasHeight = window.innerHeight;
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-
-    // Zkusíme využít co nejvíc zobrazené plochy, ale zachovat poměr mřížky
-    tileSize = Math.floor(canvasHeight / GRID_ROWS);
-    worldHeightPx = tileSize * GRID_ROWS;
-    worldWidthPx = tileSize * GRID_COLS;
-
-    if (worldWidthPx > canvasWidth) {
-      tileSize = Math.floor(canvasWidth / GRID_COLS);
-      worldWidthPx = tileSize * GRID_COLS;
-      worldHeightPx = tileSize * GRID_ROWS;
-    }
-
-    worldLeft = Math.floor((canvasWidth - worldWidthPx) / 2);
-    worldTop = Math.floor((canvasHeight - worldHeightPx) / 2);
-  }
-
-  window.addEventListener("resize", resize);
+// --- Inicializace ---
+function initGame() {
   resize();
+  // Načteme první level
+  loadLevel(0);
+  
+  // Nastavení ovládání
+  setupInputs();
+  
+  // Spustíme hlavní smyčku
+  requestAnimationFrame(gameLoop);
+}
 
-  // --- Ovládání ---
+function loadLevel(index) {
+  if (index >= LEVELS.length) return; // Konec hry?
 
+  currentLevelIndex = index;
+  const rawData = LEVELS[index];
+  
+  // Vytvoříme pracovní kopii levelu, abychom si do ní mohli psát stav (vyřešené otázky)
+  levelData = {
+    ...rawData,
+    solvedQuestions: [] // Seznam ID vyřešených otázek
+  };
+  
+  // Najdeme startovní pozici
+  const start = findPlayerStart(levelData);
+  player.x = start.x;
+  player.y = start.y;
+
+  ui.levelName.textContent = levelData.name;
+}
+
+// --- Vykreslování (Render Loop) ---
+function gameLoop() {
+  updateCamera();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+function updateCamera() {
+  // Kamera se snaží držet hráče uprostřed
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  
+  // Cílová pozice kamery (pixelová pozice hráče)
+  let targetX = player.x * TILE_SIZE + TILE_SIZE/2;
+  let targetY = player.y * TILE_SIZE + TILE_SIZE/2;
+
+  // Nastavíme kameru tak, aby hráč byl ve středu (odečteme půlku obrazovky)
+  camera.x = targetX - centerX;
+  camera.y = targetY - centerY;
+}
+
+function draw() {
+  // Vyčistit obrazovku
+  ctx.fillStyle = "#111"; 
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (!levelData) return;
+
+  ctx.save();
+  // Posuneme celý kontext o pozici kamery (zaokrouhlujeme na celé pixely pro ostrost)
+  ctx.translate(-Math.floor(camera.x), -Math.floor(camera.y));
+
+  // 1. Vykreslení terénu (BackgroundMap)
+  for (let y = 0; y < levelData.height; y++) {
+    for (let x = 0; x < levelData.width; x++) {
+      const char = levelData.backgroundMap[y][x];
+      const posX = x * TILE_SIZE;
+      const posY = y * TILE_SIZE;
+      
+      // Jednoduché barvy místo textur (zatím)
+      if (char === "#") ctx.fillStyle = "#554d44"; // Cesta / kamení
+      else ctx.fillStyle = "#2d8b3a"; // Tráva
+      
+      ctx.fillRect(posX, posY, TILE_SIZE, TILE_SIZE);
+      
+      // Jemná mřížka pro přehlednost
+      ctx.strokeStyle = "rgba(0,0,0,0.1)";
+      ctx.strokeRect(posX, posY, TILE_SIZE, TILE_SIZE);
+    }
+  }
+
+  // 2. Vykreslení objektů (ObjectMap + Questions)
+  for (let y = 0; y < levelData.height; y++) {
+    for (let x = 0; x < levelData.width; x++) {
+      const char = levelData.objectMap[y][x];
+      const posX = x * TILE_SIZE;
+      const posY = y * TILE_SIZE;
+
+      if (char === "T") {
+        // Strom
+        ctx.fillStyle = "#1e5927";
+        // Strom kreslíme trochu vyšší pro efekt hloubky
+        ctx.fillRect(posX + 2, posY - TILE_SIZE * 0.5, TILE_SIZE - 4, TILE_SIZE * 1.5);
+      } 
+      else if (char === "Q") {
+        // Otázka (pokud není vyřešená)
+        const qData = findQuestionAt(levelData, x, y);
+        const isSolved = levelData.solvedQuestions.includes(qData?.id);
+        
+        if (!isSolved) {
+           // Zlatý kruh s otazníkem
+           ctx.fillStyle = "#ffd94a";
+           ctx.beginPath();
+           ctx.arc(posX + TILE_SIZE/2, posY + TILE_SIZE/2, TILE_SIZE * 0.4, 0, Math.PI*2);
+           ctx.fill();
+           
+           ctx.fillStyle = "black";
+           ctx.font = `bold ${TILE_SIZE * 0.6}px sans-serif`;
+           ctx.textAlign = "center";
+           ctx.textBaseline = "middle";
+           ctx.fillText("?", posX + TILE_SIZE/2, posY + TILE_SIZE/2);
+        }
+      }
+    }
+  }
+
+  // 3. Hráč
+  ctx.fillStyle = "#3fa7ff"; // Modrá postavička
+  const pMargin = TILE_SIZE * 0.1;
+  ctx.fillRect(
+    player.x * TILE_SIZE + pMargin, 
+    player.y * TILE_SIZE + pMargin, 
+    TILE_SIZE - pMargin*2, 
+    TILE_SIZE - pMargin*2
+  );
+  
+  // Oči hráče (pro směr, zatím jen statické)
+  ctx.fillStyle = "white";
+  ctx.fillRect(player.x * TILE_SIZE + TILE_SIZE*0.3, player.y * TILE_SIZE + TILE_SIZE*0.3, TILE_SIZE*0.15, TILE_SIZE*0.15);
+  ctx.fillRect(player.x * TILE_SIZE + TILE_SIZE*0.6, player.y * TILE_SIZE + TILE_SIZE*0.3, TILE_SIZE*0.15, TILE_SIZE*0.15);
+
+  ctx.restore();
+}
+
+// --- Logika pohybu ---
+function movePlayer(dx, dy) {
+  // Pokud je otevřený kvíz, hráč se nehýbe
+  if (!ui.overlay.classList.contains("hidden")) return;
+
+  const newX = player.x + dx;
+  const newY = player.y + dy;
+
+  // Kontrola kolize (používá funkci, kterou už máš v levels.js)
+  if (!isBlocked(levelData, newX, newY)) {
+    player.x = newX;
+    player.y = newY;
+    
+    checkInteraction();
+  }
+}
+
+function checkInteraction() {
+  // Stojí hráč na políčku s otázkou?
+  // V levels.js je v objectMap písmeno 'Q'
+  const char = levelData.objectMap[player.y][player.x];
+  if (char === "Q") {
+    const q = findQuestionAt(levelData, player.x, player.y);
+    // Pokud existuje a není vyřešená
+    if (q && !levelData.solvedQuestions.includes(q.id)) {
+      openQuiz(q);
+    }
+  }
+}
+
+// --- Logika Kvízu (UI) ---
+let currentQuizQ = null; // Data aktuální otázky
+let currentAnswer = null; // Co hráč vybral
+
+function openQuiz(question) {
+  currentQuizQ = question;
+  currentAnswer = null;
+  
+  // Zobrazit overlay
+  ui.overlay.classList.remove("hidden");
+  
+  // 1. Vygenerovat čísla
+  const a = getRandomInt(question.aMin, question.aMax);
+  const b = getRandomInt(question.bMin, question.bMax);
+  let res;
+  let op = question.type === "add" ? "+" : "-";
+  
+  if (op === "+") res = a + b;
+  else res = a - b;
+
+  // 2. Nastavit texty v HTML
+  ui.eqA.textContent = a;
+  ui.eqB.textContent = b;
+  ui.eqOp.textContent = op;
+  ui.eqRes.textContent = "?";
+  ui.eqRes.classList.add("empty");
+  ui.msg.textContent = "Vyber výsledek";
+  ui.msg.style.color = "#ccc";
+
+  // 3. Generování tokenů (tlačítek)
+  ui.tokensContainer.innerHTML = "";
+  
+  let choices = [res]; // Vždy musí obsahovat správnou odpověď
+  // Doplníme náhodná čísla
+  while(choices.length < 4) {
+    let r = getRandomInt(Math.max(0, res - 5), res + 5);
+    if (!choices.includes(r)) choices.push(r);
+  }
+  // Zamíchat pole, aby správná odpověď nebyla vždy první
+  choices.sort(() => Math.random() - 0.5);
+
+  // Vytvoření tlačítek
+  choices.forEach(num => {
+    const btn = document.createElement("button");
+    btn.className = "token";
+    btn.textContent = num;
+    // Po kliknutí na token se spustí funkce selectToken
+    btn.onclick = () => selectToken(btn, num);
+    ui.tokensContainer.appendChild(btn);
+  });
+  
+  // Uložíme si správnou odpověď bokem pro kontrolu
+  currentQuizQ._expectedResult = res;
+}
+
+function selectToken(btnElement, value) {
+  // Odznačit ostatní
+  document.querySelectorAll(".token").forEach(t => t.classList.remove("selected"));
+  // Označit tento
+  btnElement.classList.add("selected");
+  
+  // Doplnit do rovnice vizuálně
+  currentAnswer = value;
+  ui.eqRes.textContent = value;
+  ui.eqRes.classList.remove("empty");
+}
+
+function checkQuiz() {
+  if (currentAnswer === null) {
+    ui.msg.textContent = "Musíš vybrat kartičku!";
+    return;
+  }
+  
+  if (currentAnswer === currentQuizQ._expectedResult) {
+    // Správně!
+    ui.msg.style.color = "#4caf50";
+    ui.msg.textContent = "Správně! Cesta je volná.";
+    
+    // Přidat do vyřešených
+    levelData.solvedQuestions.push(currentQuizQ.id);
+    
+    // Po chvilce zavřít
+    setTimeout(() => {
+      ui.overlay.classList.add("hidden");
+    }, 1000);
+  } else {
+    // Špatně
+    ui.msg.style.color = "#f44336";
+    ui.msg.textContent = "To není správně, zkus to znovu.";
+    ui.eqRes.classList.add("empty");
+    ui.eqRes.textContent = "?";
+    currentAnswer = null;
+    document.querySelectorAll(".token").forEach(t => t.classList.remove("selected"));
+  }
+}
+
+function closeQuiz() {
+  ui.overlay.classList.add("hidden");
+  // Volitelné: Posunout hráče zpět, aby nestál na otázce?
+}
+
+// --- Pomocné funkce ---
+function getRandomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  ctx.imageSmoothingEnabled = false; // Pixel art look
+}
+window.addEventListener("resize", resize);
+
+// --- Inputs (Ovládání) ---
+function setupInputs() {
+  // Klávesnice (PC)
   window.addEventListener("keydown", (e) => {
-    if (gameState === "explore") {
-      let dcol = 0;
-      let drow = 0;
-      if (e.key === "ArrowUp" || e.key === "w") drow = -1;
-      else if (e.key === "ArrowDown" || e.key === "s") drow = 1;
-      else if (e.key === "ArrowLeft" || e.key === "a") dcol = -1;
-      else if (e.key === "ArrowRight" || e.key === "d") dcol = 1;
-      else return;
-
-      e.preventDefault();
-
-      const newCol = player.col + dcol;
-      const newRow = player.row + drow;
-      if (
-        newCol < 0 ||
-        newCol >= GRID_COLS ||
-        newRow < 0 ||
-        newRow >= GRID_ROWS
-      ) {
-        return;
-      }
-      if (!isWalkable(newCol, newRow)) return;
-
-      player.col = newCol;
-      player.row = newRow;
-
-      const ch = getTile(newCol, newRow);
-      if (ch === "Q") {
-        startQuiz(newCol, newRow);
-      }
-    } else if (gameState === "quiz") {
-      if (e.key === "Escape") {
-        // Zavřít příklad bez vyřešení (dočasně)
-        gameState = "explore";
-        currentQuiz = null;
-      }
-    }
+    if (["ArrowUp", "w"].includes(e.key)) movePlayer(0, -1);
+    if (["ArrowDown", "s"].includes(e.key)) movePlayer(0, 1);
+    if (["ArrowLeft", "a"].includes(e.key)) movePlayer(-1, 0);
+    if (["ArrowRight", "d"].includes(e.key)) movePlayer(1, 0);
   });
 
-  canvas.addEventListener("pointerdown", (ev) => {
-    const rect = canvas.getBoundingClientRect();
-    const x = ev.clientX - rect.left;
-    const y = ev.clientY - rect.top;
-    ev.preventDefault();
-
-    if (gameState === "quiz" && currentQuiz) {
-      handleQuizPointer(x, y);
+  // Tlačítka v Kvízu
+  document.getElementById("btn-check").onclick = checkQuiz;
+  document.getElementById("btn-close").onclick = closeQuiz;
+  
+  // Mobilní tlačítka (Dotyk)
+  // Používáme 'pointerdown' pro okamžitou reakci (rychlejší než click)
+  const bindBtn = (id, dx, dy) => {
+    const btn = document.getElementById(id);
+    if(btn) {
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault(); // Zabrání označování textu atd.
+        movePlayer(dx, dy);
+      });
     }
-  });
+  };
 
-  // --- Quiz logika ---
-
-  function startQuiz(tileCol, tileRow) {
-    currentQuiz = createQuiz();
-    currentQuiz.tileCol = tileCol;
-    currentQuiz.tileRow = tileRow;
-    gameState = "quiz";
-  }
-
-  function createQuiz() {
-    const op = Math.random() < 0.5 ? "+" : "-";
-    let a, b, res;
-    if (op === "+") {
-      a = randInt(0, 10);
-      b = randInt(0, 10);
-      res = a + b;
-    } else {
-      a = randInt(0, 20);
-      b = randInt(0, a);
-      res = a - b;
-    }
-
-    // základní tokeny: a, b, výsledek, operátor + pár náhodných čísel
-    const tokens = [];
-    const needed = [String(a), String(b), String(res), op];
-    needed.forEach((t) => tokens.push({ text: t, used: false }));
-
-    while (tokens.length < 8) {
-      const n = randInt(0, 20);
-      tokens.push({ text: String(n), used: false });
-    }
-
-    return {
-      a,
-      b,
-      op,
-      res,
-      chosenOp: "",
-      chosenRes: "",
-      tokens,
-      tokenButtons: [],
-      opSlot: null,
-      resSlot: null,
-      confirmButton: null,
-      message: "",
-      messageColor: COLORS.errorText
-    };
-  }
-
-  function handleQuizPointer(x, y) {
-    const q = currentQuiz;
-    if (!q) return;
-
-    // nejdřív zjistit klik na sloty
-    if (q.opSlot && pointInRect(x, y, q.opSlot)) {
-      q.activeSlot = "op";
-      return;
-    }
-    if (q.resSlot && pointInRect(x, y, q.resSlot)) {
-      q.activeSlot = "res";
-      return;
-    }
-
-    // klik na token
-    if (q.tokenButtons) {
-      for (let i = 0; i < q.tokenButtons.length; i++) {
-        const btn = q.tokenButtons[i];
-        if (pointInRect(x, y, btn)) {
-          const token = q.tokens[i];
-          if (token.used) {
-            // zrušit použití tokenu
-            token.used = false;
-            if (q.chosenOp === token.text) q.chosenOp = "";
-            if (q.chosenRes === token.text) q.chosenRes = "";
-          } else {
-            // přiřadit do aktivního slotu nebo do prvního volného
-            if (!q.activeSlot) q.activeSlot = "op";
-            if (q.activeSlot === "op") {
-              q.chosenOp = token.text;
-            } else {
-              q.chosenRes = token.text;
-            }
-            token.used = true;
-          }
-          return;
-        }
-      }
-    }
-
-    // klik na tlačítko Potvrdit
-    if (q.confirmButton && pointInRect(x, y, q.confirmButton)) {
-      checkQuizAnswer();
-      return;
-    }
-  }
-
-  function pointInRect(x, y, rect) {
-    return (
-      x >= rect.x &&
-      x <= rect.x + rect.w &&
-      y >= rect.y &&
-      y <= rect.y + rect.h
-    );
-  }
-
-  function checkQuizAnswer() {
-    const q = currentQuiz;
-    if (!q) return;
-
-    if (!q.chosenOp || q.chosenRes === "") {
-      q.message = "Nejdřív doplň oba čtverečky.";
-      q.messageColor = COLORS.errorText;
-      return;
-    }
-
-    const okOp = q.chosenOp === q.op;
-    const okRes = Number(q.chosenRes) === q.res;
-
-    if (okOp && okRes) {
-      // úspěch
-      solvedQuestions++;
-      setTile(q.tileCol, q.tileRow, "P");
-      gameState = "explore";
-      currentQuiz = null;
-      lastMessage = "Správně!";
-      lastMessageColor = COLORS.successText;
-      lastMessageTimer = 2.0; // sekundy
-    } else {
-      q.message = "Tohle nesedí, zkus to znovu.";
-      q.messageColor = COLORS.errorText;
-      // povolit znovupoužití tokenů
-      q.tokens.forEach((t) => (t.used = false));
-      q.chosenOp = "";
-      q.chosenRes = "";
-    }
-  }
-
-  // --- Kreslení ---
-
-  function draw() {
-    ctx.fillStyle = COLORS.bg;
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-    drawWorld();
-    drawHUD();
-
-    if (gameState === "quiz" && currentQuiz) {
-      drawQuizOverlay();
-    }
-
-    // odpočet zprávy
-    if (lastMessageTimer > 0) {
-      lastMessageTimer -= 1 / 60;
-      if (lastMessageTimer < 0) lastMessageTimer = 0;
-    }
-
-    requestAnimationFrame(draw);
-  }
-
-  function drawWorld() {
-    // okraje (mimo herní pole) necháme černé
-    for (let r = 0; r < GRID_ROWS; r++) {
-      const row = currentLevel.tiles[r];
-      for (let c = 0; c < GRID_COLS; c++) {
-        const ch = row.charAt(c);
-        const x = worldLeft + c * tileSize;
-        const y = worldTop + r * tileSize;
-
-        // podklad
-        if (ch === "W") {
-          ctx.fillStyle = COLORS.wall;
-        } else if (ch === "P" || ch === "Q") {
-          ctx.fillStyle = COLORS.path;
-        } else {
-          ctx.fillStyle = COLORS.grass;
-        }
-        ctx.fillRect(x, y, tileSize, tileSize);
-
-        // mřížka (lehce)
-        ctx.strokeStyle = "rgba(0,0,0,0.2)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, y, tileSize, tileSize);
-
-        // otázka
-        if (ch === "Q") {
-          const cx = x + tileSize / 2;
-          const cy = y + tileSize / 2;
-          const rQuestion = tileSize * 0.3;
-          ctx.beginPath();
-          ctx.fillStyle = COLORS.question;
-          ctx.strokeStyle = COLORS.questionBorder;
-          ctx.lineWidth = 2;
-          ctx.arc(cx, cy, rQuestion, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-
-          ctx.fillStyle = "#000000";
-          ctx.font = `${Math.floor(tileSize * 0.6)}px system-ui`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText("?", cx, cy + 1);
-        }
-      }
-    }
-
-    // hráč
-    const px =
-      worldLeft + (player.col + 0.5 - player.size / 2) * tileSize;
-    const py =
-      worldTop + (player.row + 0.5 - player.size / 2) * tileSize;
-    const ps = tileSize * player.size;
-
-    ctx.fillStyle = COLORS.player;
-    ctx.strokeStyle = COLORS.playerBorder;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.roundRect(px, py, ps, ps, tileSize * 0.15);
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  function drawHUD() {
-  const padding = tileSize * 0.3;
-
-  ctx.font = `${Math.floor(tileSize * 0.6)}px system-ui`;
-  ctx.textBaseline = "top";
-  ctx.textAlign = "left";
-
-  // levý text: název levelu
-  ctx.fillStyle = COLORS.hudShadow;
-  ctx.fillText(`Level ${currentLevel.id}: ${currentLevel.name}`, worldLeft + padding + 2, worldTop + padding + 2);
-  ctx.fillStyle = COLORS.hudText;
-  ctx.fillText(`Level ${currentLevel.id}: ${currentLevel.name}`, worldLeft + padding, worldTop + padding);
-
-  // pravý text: příklady
-  ctx.textAlign = "right";
-  ctx.fillStyle = COLORS.hudShadow;
-  ctx.fillText(`Příklady: ${solvedQuestions} / ${totalQuestions}`,
-    worldLeft + worldWidthPx - padding + 2,
-    worldTop + padding + 2
-  );
-  ctx.fillStyle = COLORS.hudText;
-  ctx.fillText(`Příklady: ${solvedQuestions} / ${totalQuestions}`,
-    worldLeft + worldWidthPx - padding,
-    worldTop + padding
-  );
+  bindBtn("btn-up", 0, -1);
+  bindBtn("btn-down", 0, 1);
+  bindBtn("btn-left", -1, 0);
+  bindBtn("btn-right", 1, 0);
 }
 
-
- function drawQuizOverlay() {
-  const q = currentQuiz;
-
-  // průhledné pozadí přes celou hrací plochu
-  ctx.fillStyle = COLORS.overlayBg;
-  ctx.fillRect(worldLeft, worldTop, worldWidthPx, worldHeightPx);
-
-  // panel
-  const panelW = worldWidthPx * 0.9;
-  const panelH = tileSize * 7;
-  const panelX = worldLeft + (worldWidthPx - panelW) / 2;
-  const panelY = worldTop + (worldHeightPx - panelH) / 2;
-
-  ctx.fillStyle = COLORS.panelBg;
-  ctx.strokeStyle = COLORS.panelBorder;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.roundRect(panelX, panelY, panelW, panelH, tileSize * 0.3);
-  ctx.fill();
-  ctx.stroke();
-
-  // ---- nastavení velikostí písem (clamp) ----
-  const titleFontPx    = Math.min(tileSize * 0.5, 26); // titulek
-  const eqFontPx       = Math.min(tileSize * 0.8, 32); // 1 [ ] 2 = [ ]
-  const infoFontPx     = Math.min(tileSize * 0.45, 16); // instrukce
-  const tokenFontPx    = Math.min(tileSize * 0.7, 26); // čísla na kartičkách
-  const buttonFontPx   = Math.min(tileSize * 0.6, 22); // "Potvrdit"
-  const messageFontPx  = Math.min(tileSize * 0.45, 16); // hláška
-
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.fillStyle = COLORS.hudText;
-
-  // titulek
-  ctx.font = `${titleFontPx}px system-ui`;
-  ctx.fillText(
-    "Doplň příklad přetažením kartiček",
-    panelX + panelW / 2,
-    panelY + tileSize * 0.4
-  );
-
-  // Rovnice: a [op] b = [result]
-  const equationY = panelY + tileSize * 2;
-  ctx.font = `${eqFontPx}px system-ui`;
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = COLORS.slotText;
-
-  let xCursor = panelX + tileSize * 1.0;
-
-  // číslo a
-  const aText = String(q.a);
-  ctx.textAlign = "left";
-  ctx.fillText(aText, xCursor, equationY);
-  xCursor += ctx.measureText(aText).width + tileSize * 0.5;
-
-  // op slot
-  const slotSize = tileSize * 1.2;
-  const opSlot = {
-    x: xCursor,
-    y: equationY - slotSize / 2,
-    w: slotSize,
-    h: slotSize
-  };
-  drawSlot(opSlot, q.chosenOp, q.activeSlot === "op");
-  xCursor += slotSize + tileSize * 0.5;
-
-  // číslo b
-  const bText = String(q.b);
-  ctx.fillStyle = COLORS.slotText;
-  ctx.fillText(bText, xCursor, equationY);
-  xCursor += ctx.measureText(bText).width + tileSize * 0.5;
-
-  // "="
-  ctx.fillText("=", xCursor, equationY);
-  xCursor += ctx.measureText("=").width + tileSize * 0.5;
-
-  // result slot
-  const resSlot = {
-    x: xCursor,
-    y: equationY - slotSize / 2,
-    w: slotSize * 1.2,
-    h: slotSize
-  };
-  drawSlot(resSlot, q.chosenRes, q.activeSlot === "res");
-
-  q.opSlot = opSlot;
-  q.resSlot = resSlot;
-
-  // instrukce k ovládání
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.font = `${infoFontPx}px system-ui`;
-  ctx.fillStyle = COLORS.slotText;
-  ctx.fillText(
-    "Klepni na čtvereček a potom na kartičku. Znovu klepnutím kartičku vrátíš.",
-    panelX + panelW / 2,
-    equationY + slotSize
-  );
-
-  // kartičky (tokeny)
-  const tokensTop = equationY + slotSize + tileSize * 1.4;
-  const btnSize = tileSize * 1.4;
-  const btnMargin = tileSize * 0.3;
-  const tokensPerRow = Math.max(
-    1,
-    Math.floor((panelW - tileSize * 1.5) / (btnSize + btnMargin))
-  );
-
-  q.tokenButtons = [];
-  ctx.font = `${tokenFontPx}px system-ui`;
-  ctx.textBaseline = "middle";
-  ctx.textAlign = "center";
-
-  for (let i = 0; i < q.tokens.length; i++) {
-    const token = q.tokens[i];
-    const row = Math.floor(i / tokensPerRow);
-    const col = i % tokensPerRow;
-
-    const bx = panelX + tileSize * 0.75 + col * (btnSize + btnMargin);
-    const by = tokensTop + row * (btnSize + btnMargin);
-
-    const rect = { x: bx, y: by, w: btnSize, h: btnSize };
-    q.tokenButtons.push(rect);
-
-    ctx.beginPath();
-    ctx.roundRect(rect.x, rect.y, rect.w, rect.h, tileSize * 0.2);
-    ctx.fillStyle = token.used ? COLORS.tokenUsedBg : COLORS.tokenBg;
-    ctx.fill();
-    ctx.strokeStyle = COLORS.tokenBorder;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(token.text, rect.x + rect.w / 2, rect.y + rect.h / 2);
-  }
-
-  // tlačítko Potvrdit
-  const btnW = tileSize * 4;
-  const btnH = tileSize * 1.2;
-  const btnX = panelX + panelW - btnW - tileSize * 0.8;
-  const btnY = panelY + panelH - btnH - tileSize * 0.6;
-
-  const confirmButton = { x: btnX, y: btnY, w: btnW, h: btnH };
-  q.confirmButton = confirmButton;
-
-  ctx.beginPath();
-  ctx.roundRect(confirmButton.x, confirmButton.y, confirmButton.w, confirmButton.h, tileSize * 0.25);
-  ctx.fillStyle = COLORS.buttonBg;
-  ctx.fill();
-
-  ctx.fillStyle = COLORS.buttonText;
-  ctx.font = `${buttonFontPx}px system-ui`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(
-    "Potvrdit",
-    confirmButton.x + confirmButton.w / 2,
-    confirmButton.y + confirmButton.h / 2
-  );
-
-  // zpráva k příkladu (chyba apod.)
-  if (q.message) {
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = q.messageColor;
-    ctx.font = `${messageFontPx}px system-ui`;
-    ctx.fillText(
-      q.message,
-      panelX + tileSize * 0.8,
-      confirmButton.y + confirmButton.h / 2
-    );
-  }
-}
-
-
-  function drawSlot(rect, value, isActive) {
-    ctx.beginPath();
-    ctx.roundRect(rect.x, rect.y, rect.w, rect.h, tileSize * 0.2);
-    ctx.fillStyle = isActive ? COLORS.slotActive : COLORS.slotBg;
-    ctx.fill();
-    ctx.strokeStyle = COLORS.tokenBorder;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    if (value) {
-      ctx.fillStyle = COLORS.slotText;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.font = `${Math.floor(tileSize * 0.8)}px system-ui`;
-      ctx.fillText(
-        value,
-        rect.x + rect.w / 2,
-        rect.y + rect.h / 2
-      );
-    }
-  }
-
-  // start
-  requestAnimationFrame(draw);
-})();
+// Start hry
+initGame();

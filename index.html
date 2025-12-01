@@ -3,45 +3,65 @@
 <head>
   <meta charset="UTF-8">
   <title>Lesní počítání</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="game-root">
+
+  <div id="game-container">
     <canvas id="gameCanvas"></canvas>
 
-    <!-- HUD nahoře -->
-    <div id="hud">
-      <div id="hud-level">Level 1</div>
-      <div id="hud-progress">Příklady: 0 / 10</div>
-    </div>
-
-    <!-- Overlay na příklady / dialogy -->
-    <div id="overlay" class="hidden">
-      <div id="overlay-box">
-        <div id="overlay-question">3 + 4 = ?</div>
-        <input id="overlay-answer" type="number" inputmode="numeric" autocomplete="off">
-        <div id="overlay-buttons">
-          <button id="overlay-confirm">Potvrdit</button>
-          <button id="overlay-cancel">Zavřít</button>
+    <div id="ui-layer">
+      
+      <div id="hud">
+        <div class="hud-box">
+          <span id="level-name">Načítám...</span>
         </div>
-              <div id="question-feedback"></div>
+        <div class="hud-box">
+          🎒 <span id="inventory-count">0</span>
+        </div>
       </div>
-    </div>
 
-    <!-- Mobilní ovládání -->
-    <div id="touch-controls">
-      <div class="row">
-        <button class="btn-dir" data-dir="up">▲</button>
+      <div id="quiz-overlay" class="hidden">
+        <div class="quiz-panel">
+          <h2>Vypočítej zámek!</h2>
+          
+          <div class="equation-display">
+            <span id="eq-a">?</span>
+            <span id="eq-op">+</span>
+            <span id="eq-b">?</span>
+            <span>=</span>
+            <span id="eq-res" class="slot empty">?</span>
+          </div>
+          
+          <div id="quiz-message">Vyber správnou kartičku</div>
+
+          <div id="tokens-container">
+            </div>
+
+          <div class="quiz-controls">
+            <button id="btn-check" class="primary-btn">Otevřít</button>
+            <button id="btn-close" class="secondary-btn">Zavřít</button>
+          </div>
+        </div>
       </div>
-      <div class="row">
-        <button class="btn-dir" data-dir="left">◀</button>
-        <button class="btn-dir" data-dir="down">▼</button>
-        <button class="btn-dir" data-dir="right">▶</button>
+
+      <div id="mobile-controls">
+        <div class="dpad-container">
+          <div class="dpad-row">
+            <button id="btn-up" class="dpad-btn">▲</button>
+          </div>
+          <div class="dpad-row">
+            <button id="btn-left" class="dpad-btn">◀</button>
+            <button id="btn-down" class="dpad-btn">▼</button>
+            <button id="btn-right" class="dpad-btn">▶</button>
+          </div>
+        </div>
       </div>
+
     </div>
   </div>
 
- <script type="module" src="game.js"></script>
+  <script type="module" src="game.js"></script>
 </body>
 </html>
