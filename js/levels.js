@@ -126,14 +126,27 @@ export function findPlayerStart(level) {
   return { x: 1, y: 1 };
 }
 
-// Je na daném tile strom -> kolize?
+// Je na daném tile strom nebo zeď -> kolize?
 export function isBlocked(level, x, y) {
+  // 1. Základní kontrola hranic (pokud jdeme do mínusu nebo za deklarovanou šířku/výšku)
   if (x < 0 || y < 0 || x >= level.width || y >= level.height) return true;
+
+  // 2. BEZPEČNOSTNÍ KONTROLA: Existuje tento řádek skutečně v datech?
+  // Pokud je mapa v kódu kratší, než tvrdí 'level.height', vrátíme true (jako zeď)
+  if (!level.objectMap[y] || !level.backgroundMap[y]) {
+    return true;
+  }
+
+  // 3. Teď už můžeme bezpečně číst konkrétní políčko
   const objChar = level.objectMap[y][x];
+  
+  // Strom "T" je neprůchozí
   if (objChar === "T") return true;
-  // hrubý okraj – zdi "#"
-  const bgChar = level.backgroundMap[y][x];
-  if (bgChar === "#") return false; // třeba cesta je průchozí
+
+  // Volitelné: Pokud chceš, aby se nedalo chodit mimo cestu (#), můžeš přidat:
+  // const bgChar = level.backgroundMap[y][x];
+  // if (bgChar !== "#") return true; 
+
   return false;
 }
 
