@@ -1,4 +1,4 @@
-import { LEVELS, TILE_SIZE, isBlocked, findQuestionAt, findPlayerStart } from './levels.js';
+import { LEVELS, TILE_SIZE, isBlocked, findQuestionAt, findPlayerStart } from './js/levels.js';
 import { loadSave, saveProgress } from './js/storage.js';
 
 // --- Nastavení Canvasu ---
